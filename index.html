@@ -28,6 +28,9 @@
       background-image: radial-gradient(ellipse at 50% 0%, rgba(201,168,108,0.08) 0%, transparent 50%);
     }
     .container { max-width: 900px; margin: 0 auto; padding: 1rem; }
+    .gold-bar { text-align: center; margin-bottom: 0.75rem; font-size: 1rem; color: var(--accent); }
+    .gold-bar .gold-label { margin-right: 0.35rem; }
+    .gold-bar .gold-value { font-weight: 600; }
     h1 {
       font-family: 'ZCOOL QingKe HuangYou', sans-serif;
       font-weight: 400;
@@ -104,19 +107,22 @@
     }
     .idle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .idle-btn:hover:not(:disabled) { filter: brightness(1.1); }
+    .idle-progress-wrap { margin: 1rem 0; }
+    .idle-remaining { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.35rem; }
     .idle-progress {
       height: 8px;
       background: rgba(0,0,0,0.3);
       border-radius: 4px;
-      margin: 1rem 0;
+      margin-bottom: 0.75rem;
       overflow: hidden;
     }
     .idle-progress .bar {
       height: 100%;
       background: var(--accent);
       width: 0%;
-      transition: width 0.1s;
+      transition: width 0.3s;
     }
+    .idle-skip-btn { padding: 0.4rem 1rem; font-size: 0.9rem; }
     .idle-reward { margin-top: 1rem; color: var(--muted); font-size: 0.95rem; }
     .idle-reward .got { color: var(--success); }
     .special-item-select {
@@ -161,6 +167,7 @@
       padding: 0.75rem;
       border-radius: 6px;
       font-size: 0.95rem;
+      white-space: pre-line;
     }
     .craft-result.success { background: rgba(124,184,124,0.2); color: var(--success); }
     .craft-result.fail { background: rgba(199,92,92,0.2); color: var(--danger); }
@@ -178,8 +185,9 @@
     }
     .perfume-entry.unlocked { border-left-color: var(--accent); }
     .perfume-entry .name { font-weight: 600; }
-    .perfume-entry .formula { color: var(--muted); font-size: 0.9rem; }
+    .perfume-entry .formula { color: var(--muted); font-size: 0.9rem; display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
     .perfume-entry .formula .unk { color: #6a5f55; }
+    .perfume-entry .formula .formula-icon { font-size: 1.1rem; line-height: 1; }
     .save-load { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
     .save-load button {
       background: var(--card);
@@ -201,6 +209,10 @@
   <div id="toast-container" class="toast-container"></div>
   <div class="container">
     <h1>香水工坊</h1>
+    <div class="gold-bar">
+      <span class="gold-label">🪙 金币</span>
+      <span class="gold-value" id="gold-value">0</span>
+    </div>
     <div class="tabs">
       <button type="button" class="tab active" data-tab="inventory">背包</button>
       <button type="button" class="tab" data-tab="idle">挂机</button>
@@ -230,7 +242,7 @@
     <div id="panel-idle" class="panel">
       <div class="card">
         <h2>挂机采集</h2>
-        <p style="color: var(--muted); font-size: 0.9rem;">每次挂机获得 2～3 个随机普通材料。携带特殊道具可在结束时额外获得对应特殊材料。</p>
+        <p style="color: var(--muted); font-size: 0.9rem;">每次挂机 <strong>30 分钟</strong>，获得 2～3 个随机普通材料。携带特殊道具可在结束时额外获得对应特殊材料。可消耗金币跳过等待。</p>
         <div class="special-item-select">
           本次携带特殊道具：
           <select id="idle-special-item">
@@ -239,8 +251,12 @@
         </div>
         <div class="idle-area">
           <button type="button" class="idle-btn" id="btn-idle">开始挂机</button>
-          <div class="idle-progress" id="idle-progress" style="display:none;">
-            <div class="bar" id="idle-progress-bar"></div>
+          <div class="idle-progress-wrap" id="idle-progress" style="display:none;">
+            <div class="idle-remaining" id="idle-remaining">剩余 30:00</div>
+            <div class="idle-progress">
+              <div class="bar" id="idle-progress-bar"></div>
+            </div>
+            <button type="button" class="idle-btn idle-skip-btn" id="btn-idle-skip">跳过 (消耗 15 金币)</button>
           </div>
           <div class="idle-reward" id="idle-reward"></div>
         </div>
@@ -288,11 +304,11 @@
       const commonEl = document.getElementById('inv-common');
       const specialEl = document.getElementById('inv-special');
       const itemsEl = document.getElementById('inv-items');
-      commonEl.innerHTML = COMMON_MATERIALS.map(m =>
-        `<div class="inv-item"><span class="name">${m}</span><span class="num">×${game.getCommonCount(m)}</span></div>`
+      commonEl.innerHTML = COMMON_MATERIALS_IN_USE.map(m =>
+        `<div class="inv-item"><span class="name">${m} ${MATERIAL_ICONS[m] || ''}</span><span class="num">×${game.getCommonCount(m)}</span></div>`
       ).join('');
       specialEl.innerHTML = SPECIAL_MATERIALS.map(m =>
-        `<div class="inv-item special"><span class="name">${m}</span><span class="num">×${game.getSpecialCount(m)}</span></div>`
+        `<div class="inv-item special"><span class="name">${m} ${MATERIAL_ICONS[m] || ''}</span><span class="num">×${game.getSpecialCount(m)}</span></div>`
       ).join('');
       itemsEl.innerHTML = SPECIAL_ITEMS.map(it => {
         const n = game.getSpecialItemCount(it.id);
@@ -316,26 +332,23 @@
       for (let i = 0; i < 3; i++) {
         const s = document.createElement('select');
         s.dataset.slot = i;
-        s.innerHTML = '<option value="">--</option>' + COMMON_MATERIALS.map(m =>
-          `<option value="${m}">${m} (×${game.getCommonCount(m)})</option>`
-        ).join('');
+        s.innerHTML = '<option value="">--</option>' + COMMON_MATERIALS_IN_USE.map(m => {
+          const n = game.getCommonCount(m);
+          return `<option value="${m}"${n === 0 ? ' disabled' : ''}>${m} ${MATERIAL_ICONS[m] || ''} (×${n})</option>`;
+        }).join('');
         commonContainer.appendChild(s);
         selects.push(s);
       }
       const specialSel = document.getElementById('craft-special');
-      specialSel.innerHTML = '<option value="">无</option>' + SPECIAL_MATERIALS.map(m =>
-        `<option value="${m}">${m} (×${game.getSpecialCount(m)})</option>`
-      ).join('');
+      specialSel.innerHTML = '<option value="">无</option>' + SPECIAL_MATERIALS.map(m => {
+        const n = game.getSpecialCount(m);
+        return `<option value="${m}"${n === 0 ? ' disabled' : ''}>${m} ${MATERIAL_ICONS[m] || ''} (×${n})</option>`;
+      }).join('');
     }
 
     function getCraftSelection() {
       const common = [];
-      const slots = document.querySelectorAll('#craft-common select');
-      const used = new Set();
-      for (const s of slots) {
-        const v = s.value;
-        if (v && !used.has(v)) { common.push(v); used.add(v); }
-      }
+      document.querySelectorAll('#craft-common select').forEach(s => { if (s.value) common.push(s.value); });
       const special = document.getElementById('craft-special').value || null;
       return { common, special };
     }
@@ -346,7 +359,11 @@
       list.innerHTML = perfumes.map(p => {
         const unlocked = game.isPerfumeUnlocked(p.id);
         const formulaDisplay = game.getFormulaDisplay(p);
-        const formulaStr = formulaDisplay.map(x => x === '?' ? `<span class="unk">?</span>` : x).join(' + ');
+        const formulaStr = formulaDisplay.map(x => {
+          if (x === '?') return '<span class="unk">?</span>';
+          const icon = MATERIAL_ICONS[x];
+          return icon ? `<span class="formula-icon" title="${x}">${icon}</span>` : x;
+        }).join(' ');
         return `<div class="perfume-entry ${unlocked ? 'unlocked' : ''}">
           <span class="name">${p.name}</span>
           <span class="formula">[ ${formulaStr} ]</span>
@@ -377,25 +394,41 @@
       if (e.target.value && game.getSpecialCount(e.target.value) === 0) showToast('材料不足');
     });
 
+    function updateGoldDisplay() {
+      document.getElementById('gold-value').textContent = game.getGold();
+    }
+
+    function formatRemaining(ms) {
+      const totalSec = Math.ceil(ms / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      return '剩余 ' + min + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
     function refreshAll() {
       renderInventory();
       renderIdleSpecialSelect();
       renderPerfumeIndex();
+      updateGoldDisplay();
       const specialSel = document.getElementById('craft-special');
       if (specialSel.options.length > 1) {
         const cur = specialSel.value;
-        specialSel.innerHTML = '<option value="">无</option>' + SPECIAL_MATERIALS.map(m =>
-          `<option value="${m}">${m} (×${game.getSpecialCount(m)})</option>`
-        ).join('');
-        if (cur) specialSel.value = cur;
+        specialSel.innerHTML = '<option value="">无</option>' + SPECIAL_MATERIALS.map(m => {
+          const n = game.getSpecialCount(m);
+          return `<option value="${m}"${n === 0 ? ' disabled' : ''}>${m} ${MATERIAL_ICONS[m] || ''} (×${n})</option>`;
+        }).join('');
+        if (cur && game.getSpecialCount(cur) > 0) specialSel.value = cur;
+        else specialSel.value = '';
       }
       const commonSlots = document.querySelectorAll('#craft-common select');
       commonSlots.forEach((s, i) => {
         const cur = s.value;
-        s.innerHTML = '<option value="">--</option>' + COMMON_MATERIALS.map(m =>
-          `<option value="${m}">${m} (×${game.getCommonCount(m)})</option>`
-        ).join('');
-        if (cur) s.value = cur;
+        s.innerHTML = '<option value="">--</option>' + COMMON_MATERIALS_IN_USE.map(m => {
+          const n = game.getCommonCount(m);
+          return `<option value="${m}"${n === 0 ? ' disabled' : ''}>${m} ${MATERIAL_ICONS[m] || ''} (×${n})</option>`;
+        }).join('');
+        if (cur && game.getCommonCount(cur) > 0) s.value = cur;
+        else s.value = '';
       });
     }
 
@@ -414,9 +447,14 @@
       document.getElementById('idle-reward').textContent = '';
       document.getElementById('idle-progress').style.display = 'block';
       document.getElementById('idle-progress-bar').style.width = '0%';
+      document.getElementById('idle-remaining').textContent = formatRemaining(30 * 60 * 1000);
+      document.getElementById('btn-idle-skip').textContent = '跳过 (消耗 ' + game.getSkipIdleCost() + ' 金币)';
       document.getElementById('btn-idle').disabled = true;
       game.startIdle(
-        (p) => { document.getElementById('idle-progress-bar').style.width = (p * 100) + '%'; },
+        (p, elapsed) => {
+          document.getElementById('idle-progress-bar').style.width = (p * 100) + '%';
+          document.getElementById('idle-remaining').textContent = formatRemaining(game.getIdleRemainingMs());
+        },
         (reward) => {
           document.getElementById('btn-idle').disabled = false;
           document.getElementById('idle-progress').style.display = 'none';
@@ -429,17 +467,21 @@
       );
     });
 
+    document.getElementById('btn-idle-skip').addEventListener('click', () => {
+      if (!game.skipIdle()) showToast('金币不足');
+    });
+
     document.getElementById('btn-craft').addEventListener('click', () => {
       const { common, special } = getCraftSelection();
       if (common.length === 0) { showCraftResult('请至少选择一种普通材料。', false); return; }
       const result = game.craft(common, special);
       refreshAll();
       if (result.success) {
-        if (result.consumed) showCraftResult('制作成功！解锁香水「' + result.perfume.name + '」', true);
+        if (result.consumed) showCraftResult('制作成功！解锁香水「' + result.perfume.name + '」，获得 ' + result.goldEarned + ' 金币', true);
         else showCraftResult('制作成功（已解锁，未消耗材料）：' + result.perfume.name, true);
       } else {
         if (result.reason === 'insufficient') showCraftResult('材料不足，未消耗材料。', false);
-        else showCraftResult('制作失败，未消耗材料。', false);
+        else showCraftResult(result.hint ? '制作失败，未消耗材料。' + (result.hint ? '\n\n' + result.hint : '') : '制作失败，未消耗材料。', false);
       }
     });
 
@@ -462,6 +504,7 @@
     renderIdleSpecialSelect();
     renderCraftOptions();
     renderPerfumeIndex();
+    updateGoldDisplay();
   </script>
 </body>
 </html>
